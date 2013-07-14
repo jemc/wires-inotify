@@ -12,6 +12,7 @@ Gem::Specification.new do |s|
   s.licenses      = "Copyright (c) Joe McIlvain. All rights reserved "
   
   s.add_dependency('wires', '~> 0.2.8')
+  s.add_dependency('rb-inotify' '~> 0.9.0')
   
   s.add_development_dependency('rake')
   s.add_development_dependency('minitest')
