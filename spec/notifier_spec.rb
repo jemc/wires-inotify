@@ -55,7 +55,7 @@ end
 # empty_event = INotify::Native::Event.new
 
 on :notify, %r{/tmp/*} do |e|
-  p e.class
+  p e
 end
 on :notify, %r{/tmprr/*} do |e|
   puts "NEVER HERE"
@@ -63,7 +63,7 @@ end
 
 Hub.run
 sleep 0.1
-inotify_watch("/tmp/foo")
+inotify_watch("/tmp/foo", :recursive)
 sleep 100
 Hub.kill
 

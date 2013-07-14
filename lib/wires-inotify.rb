@@ -32,10 +32,6 @@ module Wires
     @@vestigial_events = @@events.select{ |x| 
       (ObjectSpace.each_object(Class).select { |c| c < x }.empty?) }
     
-    @@vestigial_events_as_flags = \
-      @@vestigial_events.map{|x| x.codestring}
-                        .map{|x| x.gsub(/^notify_/, "").to_sym}
-    
     class << self
       
       def state;  @state         end
@@ -62,11 +58,15 @@ module Wires
       end
       
       def watch(path, *flags)
-        flags = [:all_events] if flags.empty?
+        flags << :all_events if (flags&events_to_flags(@@events)).empty?
         @notifier.watch("/tmp/foo", *flags)
       end
       
     private
+      
+      def events_to_flags(list)
+        list.map{|x| x.codestring.gsub(/^notify_/, "").to_sym}
+      end
       
       def thread_iter
         @notifier.read_events.each { |e| process_event(e) }
@@ -74,7 +74,7 @@ module Wires
       
       def process_event(e)
         cls = nil
-        if (common = (e.flags&@@vestigial_events_as_flags)).empty?
+        if (common = (e.flags&events_to_flags(@@vestigial_events))).empty?
           raise NotImplementedError, \
             "No Wires::NotifyEvent for flags #{e.flags}"
         else
@@ -85,7 +85,6 @@ module Wires
                               name:          e.name,
                               absolute_name: e.absolute_name,
                               watchpath:     e.watcher.path))
-          
         end
       end
       
