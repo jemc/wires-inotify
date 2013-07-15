@@ -6,9 +6,9 @@ require 'pry'
 require 'minitest/autorun'
 require 'minitest/spec'
 require 'turn'
-Turn.config.format = :outline
+Turn.config.format  = :outline
 Turn.config.natural = true
-Turn.config.trace = 5
+Turn.config.trace   = 5
 
 include Wires
 
