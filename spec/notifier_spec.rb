@@ -67,6 +67,7 @@ inotify_watch("/tmp/foo", :recursive)
 sleep 100
 Hub.kill
 
+
 # p NotifyHub.class_variable_get(:@@vestigial_events)
 # p NotifyHub.class_variable_get(:@@vestigial_events_as_flags)
 

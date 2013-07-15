@@ -1,8 +1,18 @@
+require 'wires'
 require 'rb-inotify'
 
-def inotify_watch(*args)
-  Wires::NotifyHub.watch(*args)
+def inotify_watch(path, *flags)
+  Wires::NotifyHub.watch(path, *flags)
 end
+
+def inotify_on(flags, channels='*', &codeblock)
+  channels = [channels] unless channels.is_a? Array
+  for channel in channels
+    Wires::NotifyHub.watch(channel, *flags)
+    events = flags.map!{|x| ("notify_"+x.to_s).to_sym}
+    Wires::Channel.new(channel).register(events, codeblock)
+  end
+nil end
 
 module Wires
   
