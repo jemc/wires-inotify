@@ -6,6 +6,7 @@ def inotify_watch(path, *flags)
 end
 
 def inotify_on(flags, channels='*', &codeblock)
+  flags    = [flags]    unless flags.is_a?    Array
   channels = [channels] unless channels.is_a? Array
   for channel in channels
     Wires::NotifyHub.watch(channel, *flags)
@@ -26,6 +27,7 @@ module Wires
   class NotifyDeleteEvent       < NotifyEvent; end
   class NotifyDeleteSelfEvent   < NotifyEvent; end
   class NotifyMoveSelfEvent     < NotifyEvent; end
+  class NotifyIgnoredEvent      < NotifyEvent; end
   
   class NotifyCloseEvent        < NotifyEvent; end
   class NotifyCloseWriteEvent   < NotifyCloseEvent; end
@@ -37,21 +39,22 @@ module Wires
   
   class NotifyHub
     
-    @@events = EventRegistry.list.select{ |x| (x<NotifyEvent) }
-    
-    @@vestigial_events = @@events.select{ |x| 
-      (ObjectSpace.each_object(Class).select { |c| c < x }.empty?) }
-    
     class << self
       
-      def state;  @state         end
+      attr_accessor :notifier
+      attr_reader   :state
       def alive?; @state==:alive end
       def dead?;  @state==:dead  end
       
-      def class_init()
+      def class_init
+        
+        # @@events_init = EventRegistry.list.select{ |x| (x < NotifyEvent) }
+        @@events = Hash.new
+        EventRegistry.list.select{ |x| (x < NotifyEvent) }.each do |cls|
+          @@events[cls.codestring.gsub(/^notify_/, "").to_sym] = cls
+        end
         
         @state = :dead
-        
         @notifier = INotify::Notifier.new
         
         Hub.after_run(retain:true) do
@@ -64,27 +67,67 @@ module Wires
           @thread.kill
           @thread = nil
         end
-        
       end
       
-      def watch(path, *flags)
-        flags << :all_events if (flags&events_to_flags(@@events)).empty?
-        @notifier.watch("/tmp/foo", *flags)
+      def watch(path, *flags, &block)
+        flags << :all_events if (flags & @@events.keys).empty?
+        @notifier.watch(path, *flags, &block)
       end
+      
+      def list
+        @notifier.watchers.values.map do |w|
+          class << w
+            alias :_old_close :close
+            def close(*args)
+              self.instance_variable_set(:@closed, true)
+              _old_close(*args)
+            end
+            def closed?; self.instance_variable_get(:@closed); end
+          end unless w.public_methods.include? :closed?
+          w
+        end.reject { |w| w.closed? }
+      end
+      
+      def matching(path=/.*/, *flags)
+        list.select { |w| (path.is_a?(Regexp)) ? 
+                            (path=~w.path) : 
+                            (path.to_s==w.path) }
+            .reject { |w| flags.detect{ |f| not flag_match(f, w.flags) } }
+      end
+      
+      def close_all
+        list.each { |w| w.close }
+      end
+      
+      def close_matching(*args) # :args: path=/.*/, *flags
+        matching(*args).each { |w| w.close }
+      nil end
+      
+      threadlock (public_methods-superclass.public_methods)
       
     private
       
-      def events_to_flags(list)
-        list.map{|x| x.codestring.gsub(/^notify_/, "").to_sym}
+      def close_watcher(w)
+        
+      end
+      
+      # Determine if flag is implied (or explied) by flags array
+      def flag_match(testflag, flags)
+        return true if flags.include? :all_events
+        (not flags.detect{ |f| @@events[testflag] and 
+                               @@events[f] and not 
+                               @@events[testflag]<=@@events[f] })
       end
       
       def thread_iter
-        @notifier.read_events.each { |e| process_event(e) }
+        @notifier.read_events.each { |e| process_event(e); e.callback! }
       end
       
       def process_event(e)
+        return if dead?
+        
         cls = nil
-        if (common = (e.flags&events_to_flags(@@vestigial_events))).empty?
+        if (common = (e.flags & @@events.keys)).empty?
           raise NotImplementedError, \
             "No Wires::NotifyEvent for flags #{e.flags}"
         else

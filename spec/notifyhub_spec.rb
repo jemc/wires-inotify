@@ -1,16 +1,17 @@
 require 'wires'
 require_relative '../lib/wires/inotify'
 
-require 'pry'
-
 require 'minitest/autorun'
 require 'minitest/spec'
-require 'turn'
-Turn.config.format  = :outline
-Turn.config.natural = true
-Turn.config.trace   = 5
+# require 'turn'
+# Turn.config.format  = :outline
+# Turn.config.natural = true
+# Turn.config.trace   = 5
 
 include Wires
+
+
+$testdir = "/tmp/wires-inotify-testdir-#{$$}"
 
 describe NotifyHub do
   
@@ -19,10 +20,9 @@ describe NotifyHub do
     NotifyHub.alive?.must_equal Hub.alive?
     NotifyHub.dead?.must_equal  Hub.dead?
     NotifyHub.state.must_equal :dead
-    NotifyHub.state.must_equal :dsdfj
     NotifyHub.instance_variable_get(:@thread).must_be_nil
     
-    Hub.run
+    Hub.run;
     
     NotifyHub.alive?.must_equal Hub.alive?
     NotifyHub.dead?.must_equal  Hub.dead?
@@ -30,14 +30,14 @@ describe NotifyHub do
     NotifyHub.instance_variable_get(:@thread).wont_be_nil
     NotifyHub.instance_variable_get(:@thread).status.wont_equal false
     
-    Hub.kill
+    Hub.kill;
     
     NotifyHub.alive?.must_equal Hub.alive?
     NotifyHub.dead?.must_equal  Hub.dead?
     NotifyHub.state.must_equal :dead
     NotifyHub.instance_variable_get(:@thread).must_be_nil
     
-    Hub.run
+    Hub.run;
     
     NotifyHub.alive?.must_equal Hub.alive?
     NotifyHub.dead?.must_equal  Hub.dead?
@@ -45,7 +45,7 @@ describe NotifyHub do
     NotifyHub.instance_variable_get(:@thread).wont_be_nil
     NotifyHub.instance_variable_get(:@thread).status.wont_equal false
     
-    Hub.kill
+    Hub.kill;
     
     NotifyHub.alive?.must_equal Hub.alive?
     NotifyHub.dead?.must_equal  Hub.dead?
@@ -54,47 +54,79 @@ describe NotifyHub do
     
   end
   
-  it "something" do
-    sleep 1
-  end
-  it "something2" do
-    sleep 1
-  end
-  it "something23" do
-    sleep 1
-  end
-  it "something25" do
-    sleep 1
-  end
-  it "something243" do
-    sleep 1
+  it "fires a Wires::NotifyEvent for each received inotify event" do
+    
+    caught_events = []
+    on :notify do |e|
+      caught_events << e.class.codestring.to_sym
+    end
+    
+    `mkdir -p #{$testdir}`; sleep 0.1
+    
+    Hub.run
+    NotifyHub.watch($testdir)
+    
+    `touch #{$testdir}/testfile`; sleep 0.1
+    caught_events.sort.must_equal \
+      [:notify_attrib, :notify_close_write, :notify_create, :notify_open]
+    caught_events.clear
+    
+    `echo "something" > #{$testdir}/testfile`; sleep 0.1
+    caught_events.sort.must_equal \
+      [:notify_close_write, :notify_modify, :notify_modify, :notify_open]
+    caught_events.clear
+    
+    `cat #{$testdir}/testfile`; sleep 0.1
+    caught_events.sort.must_equal \
+      [:notify_access, :notify_close_nowrite, :notify_open]
+    caught_events.clear
+    
+    `mkdir #{$testdir}/subdir`; sleep 0.1
+    caught_events.sort.must_equal [:notify_create]
+    caught_events.clear
+    
+    `mv #{$testdir}/testfile #{$testdir}/subdir/testfile`; sleep 0.1
+    caught_events.sort.must_equal [:notify_moved_from]
+    caught_events.clear
+    
+    `mv #{$testdir}/subdir/testfile #{$testdir}/testfile`; sleep 0.1
+    caught_events.sort.must_equal [:notify_moved_to]
+    caught_events.clear
+    
+    `chmod 777 #{$testdir}/testfile`; sleep 0.1
+    caught_events.sort.must_equal [:notify_attrib]
+    caught_events.clear
+    
+    `rm #{$testdir}/testfile`; sleep 0.1
+    caught_events.sort.must_equal [:notify_delete]
+    caught_events.clear
+    
+    `mv #{$testdir} #{$testdir}-foo`; sleep 0.1
+    caught_events.sort.must_equal [:notify_move_self]
+    caught_events.clear
+    
+    `rm -rf #{$testdir}-foo`; sleep 0.1
+    caught_events.sort.must_include :notify_delete_self
+    caught_events.clear
+    
+    # NotifyHub.close_all
+    Hub.kill
+    
   end
   
+  # it "close_all" do
+  #   NotifyHub.close_all
+  # end
+  
+  # it "close_matching" do
+  #   Hub.run
+  #   `mkdir -p #{$testdir}`; sleep 0.1
+  #   NotifyHub.watch $testdir, :modify, :dont_follow
+  #   # puts NotifyHub.matching(/test/, :modify)
+  #   # puts NotifyHub.list
+  #   puts NotifyHub.close_matching(/test/, :modify)
+  #   puts NotifyHub.list
+  #   Hub.kill
+  # end
   
 end
-
-# empty_event = INotify::Native::Event.new
-
-# on :notify, %r{/tmp/*} do |e|
-#   p e
-#   Hub.kill
-# end
-# on :notify, %r{/tmprr/*} do |e|
-#   puts "NEVER HERE"
-# end
-
-# Hub.run
-# sleep 0.1
-# inotify_watch("/tmp/foo", :recursive)
-
-# Thread.new do sleep 0.5; Hub.kill end
-# sleep 100
-
-
-# p NotifyHub.class_variable_get(:@@vestigial_events)
-# p NotifyHub.class_variable_get(:@@vestigial_events_as_flags)
-
-# p EventRegistry.list.select{ |x| 
-#   (x<NotifyEvent) and
-#   (ObjectSpace.each_object(Class).select { |c| c < x }.empty?)
-# }
