@@ -71,21 +71,13 @@ module Wires
       
       def watch(path, *flags, &block)
         flags << :all_events if (flags & @@events.keys).empty?
-        @notifier.watch(path, *flags, &block)
+        inject_a_watcher(@notifier.watch(path, *flags, &block))
       end
       
       def list
-        @notifier.watchers.values.map do |w|
-          class << w
-            alias :_old_close :close
-            def close(*args)
-              self.instance_variable_set(:@closed, true)
-              _old_close(*args)
-            end
-            def closed?; self.instance_variable_get(:@closed); end
-          end unless w.public_methods.include? :closed?
-          w
-        end.reject { |w| w.closed? }
+        @notifier.watchers.values
+                 .map { |w| inject_a_watcher(w)} # Inject new methods into obj
+                 .reject { |w| w.closed? } # Exclude closed watchers from list
       end
       
       def matching(path=/.*/, *flags)
@@ -95,50 +87,74 @@ module Wires
             .reject { |w| flags.detect{ |f| not flag_match(f, w.flags) } }
       end
       
+      # Close all watchers and returns number of watchers closed
       def close_all
+        s = list.size
         list.each { |w| w.close }
+        s>0 ? s : nil
       end
       
+      # Close watchers matching args and returns number of watchers closed
       def close_matching(*args) # :args: path=/.*/, *flags
-        matching(*args).each { |w| w.close }
-      nil end
+        matches = matching(*args)
+        matches.each { |w| w.close }
+        (s=matches.size)>0 ? s : nil
+      end
       
       threadlock (public_methods-superclass.public_methods)
       
-    private
-      
-      def close_watcher(w)
-        
-      end
       
       # Determine if flag is implied (or explied) by flags array
       def flag_match(testflag, flags)
         return true if flags.include? :all_events
-        (not flags.detect{ |f| @@events[testflag] and 
-                               @@events[f] and not 
-                               @@events[testflag]<=@@events[f] })
+        
+        !!flags.detect{ |f| testflag==f or
+                            (@@events[testflag] and 
+                             @@events[f] and 
+                             @@events[testflag]<=@@events[f]) }
       end
       
+    private
+    
+      # Open metaclass of w to add close state tracking and return obj
+      def inject_a_watcher(watcher)
+        return watcher if watcher.public_methods.include? :closed?
+        
+        watcher.instance_variable_set(:@closed, false)
+        class << watcher
+          alias :_old_close :close
+          def close(*args)
+            self.instance_variable_set(:@closed, true)
+            begin; _old_close(*args)
+            rescue SystemCallError; end # If error, assume already closed
+          end
+          def closed?; self.instance_variable_get(:@closed); end
+        end
+        
+        watcher
+      end
+      
+      # Called repeatedly in inotify event processing thread
       def thread_iter
         @notifier.read_events.each { |e| process_event(e); e.callback! }
       end
       
+      # Fire a wires event for inotify event e
       def process_event(e)
         return if dead?
         
-        cls = nil
-        if (common = (e.flags & @@events.keys)).empty?
+        if (common_flags = (e.flags & @@events.keys)).empty?
           raise NotImplementedError, \
             "No Wires::NotifyEvent for flags #{e.flags}"
-        else
-          cls = Event.from_codestring("notify_"+common.first.to_s)
-          
-          Channel.new(e.watcher.path)
-                 .fire(cls.new(*e.flags,
-                              name:          e.name,
-                              absolute_name: e.absolute_name,
-                              watchpath:     e.watcher.path))
         end
+        
+        cls = Event.from_codestring("notify_"+common_flags.first.to_s)
+        
+        Channel.new(e.watcher.path)
+               .fire(cls.new(*e.flags,
+                            name:          e.name,
+                            absolute_name: e.absolute_name,
+                            watchpath:     e.watcher.path))
       end
       
     end
