@@ -8,14 +8,30 @@ Turn.config.format  = :outline
 Turn.config.natural = true
 Turn.config.trace   = 5
 
-include Wires
 
+describe Wires do
+  it "encapsulates the right things" do
+    Wires.constants.must_include :NotifyHub
+    Wires.constants.must_include :NotifyEvent
+    Wires::NotifyHub.class_variable_get(:@@events).values
+      .map  { |cls| cls.name.gsub(/(.*)::/, "").to_sym }
+      .each { |sym| Wires.constants.must_include sym}
+  end
+  
+  it "doesn't encapsulate the other things" do
+    Object.private_methods.include? :inotify_on
+    Object.private_methods.include? :inotify_watch
+  end
+end
+
+
+include Wires
 
 $testdir = "/tmp/wires-inotify-testdir-#{$$}"
 
 describe NotifyHub do
   
-  it "is alive when and only when the Hub is." do
+  it "is alive when and only when the Hub is" do
     
     NotifyHub.alive?.must_equal Hub.alive?
     NotifyHub.dead?.must_equal  Hub.dead?
