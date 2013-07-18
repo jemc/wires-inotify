@@ -104,6 +104,8 @@ module Wires
       threadlock (public_methods-superclass.public_methods)
       
       
+    private
+      
       # Determine if flag is implied (or explied) by flags array
       def flag_match(testflag, flags)
         return true if flags.include? :all_events
@@ -114,8 +116,6 @@ module Wires
                              @@events[testflag]<=@@events[f]) }
       end
       
-    private
-    
       # Open metaclass of w to add close state tracking and return obj
       def inject_a_watcher(watcher)
         return watcher if watcher.public_methods.include? :closed?
