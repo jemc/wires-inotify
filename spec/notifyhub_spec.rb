@@ -29,6 +29,7 @@ include Wires
 
 $testdir = "/tmp/wires-inotify-testdir-#{$$}"
 
+
 describe NotifyHub do
   
   it "is alive when and only when the Hub is" do
@@ -173,6 +174,30 @@ describe NotifyHub do
   end
   
   
+  it "can .close_matching watchers from its .list" do
+    count = 6
+    1.upto(count) { |i| `mkdir -p #{$testdir}/#{i}` }
+    
+    Hub.run
+    
+    a = NotifyHub.watch "#{$testdir}/1", :modify
+    b = NotifyHub.watch "#{$testdir}/2", :modify
+    c = NotifyHub.watch "#{$testdir}/3", :modify, :dont_follow
+    d = NotifyHub.watch "#{$testdir}/4", :modify, :access
+    e = NotifyHub.watch "#{$testdir}/5", :access
+    f = NotifyHub.watch "#{$testdir}/6", :close
+    
+    NotifyHub.close_matching(%r{/[1356]}, :modify)
+    [a,c]        .each { |w| NotifyHub.list.wont_include w }
+    [b,d,e,f]    .each { |w| NotifyHub.list.must_include w }
+    
+    NotifyHub.close_all
+    Hub.kill
+    
+    1.upto(count) { |i| `rm -rf #{$testdir}/#{i}` }
+  end
+  
+  
   it "injects the closed? method and relevant tracking into each Watcher" do
     `mkdir -p #{$testdir}`
     
@@ -263,5 +288,5 @@ describe NotifyHub do
     
   end
   
-  
 end
+
