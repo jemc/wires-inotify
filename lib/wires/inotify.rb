@@ -11,6 +11,7 @@ def inotify_on(flags, channels='*', &codeblock)
   for channel in channels
     Wires::NotifyHub.watch(channel, *flags)
     events = flags.map!{|x| ("notify_"+x.to_s).to_sym}
+                  .map!{|x| x==:notify_all_events ? :notify : x }
     Wires::Channel.new(channel).register(events, codeblock)
   end
 nil end
